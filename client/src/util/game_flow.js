@@ -1,0 +1,1 @@
+export const GAME_FLOW = ["LOBBY", "CHOOSING", "IN_PROGRESS", "GAME_OVER"];

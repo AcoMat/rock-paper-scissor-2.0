@@ -1,27 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 
-function Game() {
+function Game({ playersConfig }) {
     const canvasRef = useRef(null);
     const [winner, setWinner] = useState(null);
     const emojis = ["🧱", "📄", "✂️"];
     const objects = [];
     const speed = 2.5;
 
+    const player1 = playersConfig[Object.keys(playersConfig)[0]];
+    const player2 = playersConfig[Object.keys(playersConfig)[1]];
+
     useEffect(() => {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext("2d");
 
-        function createObjects(count) {
-            for (let i = 0; i < count; i++) {
-                const type = emojis[Math.floor(Math.random() * emojis.length)];
-                objects.push({
-                    x: Math.random() * canvas.width,
-                    y: Math.random() * canvas.height,
-                    vx: (Math.random() - 0.5) * speed,
-                    vy: (Math.random() - 0.5) * speed,
-                    type: type
-                });
-            }
+        function createObjects(playerConfig) {
+            Object.keys(playerConfig).forEach((item, index) => {
+                for (let i = 0; i < playerConfig[item]; i++) {
+                    objects.push({
+                        type: emojis[index],
+                        x: Math.random() * canvas.width,
+                        y: Math.random() * canvas.height,
+                        vx: 0,
+                        vy: 0,
+                    });
+                }
+            });
         }
 
         function drawObjects() {
@@ -127,7 +131,8 @@ function Game() {
             }
         }
 
-        createObjects(10);
+        createObjects(player1);
+        createObjects(player2);
         update();
     }, []);
 

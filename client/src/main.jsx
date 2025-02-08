@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client'
-import Game from './pages/Game'
+import App from './App'
 
 createRoot(document.getElementById('root')).render(
-    <Game />
+    <App/>
 )
