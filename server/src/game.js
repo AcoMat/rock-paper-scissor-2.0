@@ -1,114 +1,137 @@
 export default class Game {
     constructor(playerOneChoice, playerTwoChoice) {
-        this.emojis = {rock:"🧱", paper:"📄", scissor:"✂️"};
-        this.objects = [];
-        this.speed = 2.5;
-        this.canvas = {width: 800, height: 600};
+        this.EMOJIS = { rock: "🧱", paper: "📄", scissor: "✂️" };
+        this.CANVAS = { width: 800, height: 600 };
+        this.STEP = 5; // Movimiento en pasos de 2 píxeles
+        this.MIN_DISTANCE_FOR_COLLISION = 30;
 
-        this.objects.push({
-            type: this.emojis[playerOneChoice],
-            x: Math.random() * this.canvas.width,
-            y: Math.random() * this.canvas.height,
-            vx: 0,
-            vy: 0,
-        });
+        if (!this.EMOJIS[playerOneChoice] || !this.EMOJIS[playerTwoChoice]) {
+            throw new Error("Invalid player choice. Choices must be 'rock', 'paper', or 'scissor'.");
+        }
 
-        this.objects.push({
-            type: this.emojis[playerTwoChoice],
-            x: Math.random() * this.canvas.width,
-            y: Math.random() * this.canvas.height,
-            vx: 0,
-            vy: 0,
-        });
+        this.objects = [
+            this.createObject(playerOneChoice),
+            this.createObject(playerOneChoice),
+            this.createObject(playerOneChoice),
+            this.createObject(playerOneChoice),
+            this.createObject(playerOneChoice),
+
+            this.createObject(playerTwoChoice),
+            this.createObject(playerTwoChoice),
+            this.createObject(playerTwoChoice),
+            this.createObject(playerTwoChoice),
+            this.createObject(playerTwoChoice),
+        ];
+    }
+
+    createObject(type) {
+        // Dirección inicial aleatoria en pasos de 2 píxeles
+        const directions = [
+            { vx: this.STEP, vy: 0 },  // Derecha
+            { vx: -this.STEP, vy: 0 }, // Izquierda
+            { vx: 0, vy: this.STEP },  // Abajo
+            { vx: 0, vy: -this.STEP }, // Arriba
+            { vx: this.STEP, vy: this.STEP },    // Diagonal abajo derecha
+            { vx: -this.STEP, vy: this.STEP },   // Diagonal abajo izquierda
+            { vx: this.STEP, vy: -this.STEP },   // Diagonal arriba derecha
+            { vx: -this.STEP, vy: -this.STEP }   // Diagonal arriba izquierda
+        ];
+        
+        const initialDirection = directions[Math.floor(Math.random() * directions.length)];
+
+        return {
+            type: this.EMOJIS[type],
+            x: Math.random() * this.CANVAS.width,
+            y: Math.random() * this.CANVAS.height,
+            vx: initialDirection.vx,
+            vy: initialDirection.vy
+        };
     }
 
     getObjects() {
         return this.objects;
     }
 
-    findNearestEnemy(obj) {
-        let minDist = Infinity;
-        let target = null;
-
-        this.objects.forEach(enemy => {
-            if (
-                (obj.type === "🧱" && enemy.type === "📄") ||
-                (obj.type === "📄" && enemy.type === "✂️") ||
-                (obj.type === "✂️" && enemy.type === "🧱")
-            ) {
-                const dx = enemy.x - obj.x;
-                const dy = enemy.y - obj.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-
-                if (dist < minDist) {
-                    minDist = dist;
-                    target = enemy;
-                }
-            }
-        });
-
-        return target;
-    }
-
     moveObjects() {
         this.objects.forEach(obj => {
-            const target = findNearestEnemy(obj);
-
-            if (target) {
-                let dx = target.x - obj.x;
-                let dy = target.y - obj.y;
-                let mag = Math.sqrt(dx * dx + dy * dy);
-
-                if (mag > 0) {
-                    obj.vx = (dx / mag) * speed;
-                    obj.vy = (dy / mag) * speed;
-                }
+            // Pequeña probabilidad de cambiar de dirección (hace que el movimiento sea errático)
+            if (Math.random() < 0.2) { // 20% de probabilidad de cambiar
+                const directions = [
+                    { vx: this.STEP, vy: 0 },
+                    { vx: -this.STEP, vy: 0 },
+                    { vx: 0, vy: this.STEP },
+                    { vx: 0, vy: -this.STEP },
+                    { vx: this.STEP, vy: this.STEP },
+                    { vx: -this.STEP, vy: this.STEP },
+                    { vx: this.STEP, vy: -this.STEP },
+                    { vx: -this.STEP, vy: -this.STEP }
+                ];
+                const newDirection = directions[Math.floor(Math.random() * directions.length)];
+                obj.vx = newDirection.vx;
+                obj.vy = newDirection.vy;
             }
 
+            // Aplicar movimiento
             obj.x += obj.vx;
             obj.y += obj.vy;
 
-            if (obj.x < 0 || obj.x > canvas.width - 30) obj.vx *= -1;
-            if (obj.y < 0 || obj.y > canvas.height - 30) obj.vy *= -1;
+            // Rebote en los bordes
+            if (obj.x < 0 || obj.x > this.CANVAS.width) obj.vx *= -1;
+            if (obj.y < 0 || obj.y > this.CANVAS.height) obj.vy *= -1;
         });
     }
 
     checkCollisions() {
-        for (let i = 0; i < this.objects.length; i++) {
-            for (let j = i + 1; j < this.objects.length; j++) {
-                const obj1 = this.objects[i];
-                const obj2 = this.objects[j];
+        const survivors = [];
 
+        for (let i = 0; i < this.objects.length; i++) {
+            let obj1 = this.objects[i];
+            let isEliminated = false;
+
+            for (let j = 0; j < this.objects.length; j++) {
+                if (i === j) continue;
+
+                let obj2 = this.objects[j];
                 const dx = obj1.x - obj2.x;
                 const dy = obj1.y - obj2.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
-                if (distance < 30) {
-                    if (
-                        (obj1.type === "🧱" && obj2.type === "✂️") ||
-                        (obj1.type === "✂️" && obj2.type === "📄") ||
-                        (obj1.type === "📄" && obj2.type === "🧱")
-                    ) {
-                        this.objects.splice(j, 1);
-                    } else if (
-                        (obj2.type === "🧱" && obj1.type === "✂️") ||
-                        (obj2.type === "✂️" && obj1.type === "📄") ||
-                        (obj2.type === "📄" && obj1.type === "🧱")
-                    ) {
-                        this.objects.splice(i, 1);
-                    }
+                if (distance < this.MIN_DISTANCE_FOR_COLLISION && this.isEnemy(obj1, obj2)) {
+                    isEliminated = true;
+                    break;
                 }
             }
+
+            if (!isEliminated) {
+                survivors.push(obj1);
+            }
         }
+
+        this.objects = survivors;
+    }
+
+    isEnemy(obj1, obj2) {
+        return (
+            (obj1.type === this.EMOJIS.rock && obj2.type === this.EMOJIS.paper) ||
+            (obj1.type === this.EMOJIS.paper && obj2.type === this.EMOJIS.scissor) ||
+            (obj1.type === this.EMOJIS.scissor && obj2.type === this.EMOJIS.rock)
+        );
     }
 
     checkWinner() {
         const remainingTypes = new Set(this.objects.map(obj => obj.type));
 
         if (remainingTypes.size === 1) {
-            return remainingTypes[0];
+            return remainingTypes.values().next().value;
         }
         return false;
     }
 
+    boost(type){
+        const objs = this.objects.filter(obj => obj.type === type);
+        objs.forEach(obj => {
+            obj.vx *= 0.1;
+            obj.vy *= 0.1;
+        });
+    }
 }

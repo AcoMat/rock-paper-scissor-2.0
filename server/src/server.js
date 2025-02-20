@@ -7,89 +7,147 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-      origin: "http://localhost:5173",
+        origin: "http://localhost:5173",
     }
 });
 
+// Constants
 const GAME_FLOW = ["LOBBY", "CHOOSING", "READY", "RUNNING", "GAME_OVER"];
-const rooms = {
-    "roomCodeExample": {
-        users: new Set(),
-        game_state: GAME_FLOW[0]
-    }
+const GAME_LOOP_INTERVAL = 5; // milliseconds
+const PORT = 3000;
+
+// Room management
+const rooms = {};
+
+const gameInstances = {};
+
+// Helper function to generate a random room code
+const generateRoomCode = () => Math.random().toString(36).substring(7);
+
+// Helper function to emit updates to all clients in a room
+const emitUpdate = (roomCode, room) => {
+    io.to(roomCode).emit("update", room);
 };
 
+// Helper function to emit game frames to all clients in a room
+const emitGameFrame = (roomCode, gameObjects) => {
+    io.to(roomCode).emit("game_frame", gameObjects);
+};
 
 io.on("connection", (socket) => {
-    console.log(`user connected ${socket.id}`);
+    console.log(`User connected: ${socket.id}`);
 
+    // Handle user disconnect
     socket.on("disconnect", () => {
-        console.log("user disconnected");
+        console.log(`User disconnected: ${socket.id}`);
+        for (const roomCode in rooms) {
+            if (rooms[roomCode].users.has(socket.id)) {
+                rooms[roomCode].users.delete(socket.id);
+                if (rooms[roomCode].users.size === 0) {
+                    delete rooms[roomCode]; // Clean up empty rooms
+                } else {
+                    emitUpdate(roomCode, rooms[roomCode]);
+                }
+                break;
+            }
+        }
     });
 
-
+    // Handle room creation
     socket.on("create_room", () => {
-        const roomCode = Math.random().toString(36).substring(7);
+        const roomCode = generateRoomCode();
         socket.join(roomCode);
-        const players_set = new Set();
-        players_set.add(socket.id);
         rooms[roomCode] = {
-            roomCode: roomCode,
-            users: players_set,
-            game_state: GAME_FLOW[0]
+            roomCode,
+            users: new Set([socket.id]),
+            game_state: GAME_FLOW[0],
+            playerOne: null,
+            playerTwo: null,
+            game_objects: null,
+            winner: null,
         };
-        io.to(roomCode).emit("update", rooms[roomCode]);
+        emitUpdate(roomCode, rooms[roomCode]);
     });
 
+    // Handle joining a room
     socket.on("join_room", (roomCode) => {
         if (rooms[roomCode] && rooms[roomCode].users.size < 2 && rooms[roomCode].game_state === GAME_FLOW[0]) {
             socket.join(roomCode);
             rooms[roomCode].users.add(socket.id);
-            io.to(roomCode).emit("update", rooms[roomCode]);
+            emitUpdate(roomCode, rooms[roomCode]);
         }
-    });
-    
-    socket.on("start", (roomCode) => {
-        if(rooms[roomCode].users.size === 2) {
-            rooms[roomCode].game_state = GAME_FLOW[1];
-            io.to(roomCode).emit("update", rooms[roomCode]);
-        }
-    });
-    
-    socket.on("choose", (data) => {
-        const roomCode = data.roomCode;
-        if (!rooms[roomCode].playerOne || rooms[roomCode].playerOne?.id === socket.id) {
-            rooms[roomCode].playerOne = { id: socket.id, choice: data.option } 
-        }else {
-            rooms[roomCode].playerTwo = { id: socket.id, choice: data.option };
-            rooms[roomCode].game_state = GAME_FLOW[2];
-            io.to(roomCode).emit("update", rooms[roomCode]);
-        }
-        
     });
 
+    // Handle starting the game (transition to choosing phase)
+    socket.on("start", (roomCode) => {
+        if (rooms[roomCode] && rooms[roomCode].users.size === 2) {
+            rooms[roomCode].game_state = GAME_FLOW[1];
+            emitUpdate(roomCode, rooms[roomCode]);
+        }
+    });
+
+    // Handle player choice
+    socket.on("choose", (data) => {
+        const { roomCode, option } = data;
+        if (!rooms[roomCode]) return;
+
+        if (!rooms[roomCode].playerOne || rooms[roomCode].playerOne.id === socket.id) {
+            rooms[roomCode].playerOne = { id: socket.id, choice: option };
+        } else {
+            rooms[roomCode].playerTwo = { id: socket.id, choice: option };
+            rooms[roomCode].game_state = GAME_FLOW[2];
+            emitUpdate(roomCode, rooms[roomCode]);
+        }
+    });
+
+    // Handle starting the game (transition to running phase)
     socket.on("start_game", (roomCode) => {
+        if (!rooms[roomCode] || rooms[roomCode].game_state !== GAME_FLOW[2]) return;
+
         rooms[roomCode].game_state = GAME_FLOW[3];
-        const game_instance = new Game(rooms[roomCode].playerOne.choice, rooms[roomCode].playerTwo.choice);
-        rooms[roomCode].game_objects = game_instance.getObjects();
-        io.to(roomCode).emit("update", rooms[roomCode]);
+        gameInstances[roomCode] = new Game(rooms[roomCode].playerOne.choice, rooms[roomCode].playerTwo.choice);
+        rooms[roomCode].game_objects = gameInstances[roomCode].getObjects();
+        emitGameFrame(roomCode, rooms[roomCode].game_objects);
 
         const gameLoop = setInterval(() => {
-            game_instance.moveObjects();
-            game_instance.checkCollisions();
-            rooms[roomCode].game_objects = game_instance.getObjects();
-            io.to(roomCode).emit("update", rooms[roomCode]);
-            if (game_instance.checkWinner()) {
-                clearInterval(gameLoop);
-            }
-        }, 500);
+            gameInstances[roomCode].moveObjects();
+            gameInstances[roomCode].checkCollisions();
+            rooms[roomCode].game_objects = gameInstances[roomCode].getObjects();
+            emitGameFrame(roomCode, rooms[roomCode].game_objects);
 
+            const winner = gameInstances[roomCode].checkWinner();
+            if (winner) {
+                clearInterval(gameLoop);
+                rooms[roomCode].game_state = GAME_FLOW[4];
+                rooms[roomCode].winner = winner;
+                emitUpdate(roomCode, rooms[roomCode]);
+            }
+        }, GAME_LOOP_INTERVAL);
+    });
+
+
+    // Handle boost
+    socket.on("boost", (roomCode) => {
+        console.log(`Boost requested in room ${roomCode}`);
         
+        if (rooms[roomCode].game_state !== GAME_FLOW[3]) return;
+
+        // Determine which player is boosting based on socket ID
+        const player = rooms[roomCode].playerOne.id === socket.id ? 
+            rooms[roomCode].playerOne : 
+            rooms[roomCode].playerTwo;
+    
+        // Apply boost to the player's choice type
+        gameInstances[roomCode].boost(player.choice);
+        console.log(`Boost applied to ${player.choice}`);
+        
+        
+        // Send updated game objects
+        rooms[roomCode].game_objects = gameInstances[roomCode].getObjects();
+        emitGameFrame(roomCode, rooms[roomCode].game_objects);
     });
 });
 
-
-
-httpServer.listen(3000, () => {
-  console.log("server started, listening on port 3000");
+httpServer.listen(PORT, () => {
+    console.log(`Server started, listening on port ${PORT}`);
 });
