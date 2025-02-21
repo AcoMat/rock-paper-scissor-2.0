@@ -48,6 +48,7 @@ body {
     border-left: 1px solid #1b1e20;
 }
 
+
 button {
     padding: 10px;
     border: none;
@@ -63,4 +64,17 @@ button {
 
 .copy-button {
     background-color: #ffffff00;
+}
+
+.copy-button:hover {
+    color: #8f8f8f;
+}
+
+.choices {
+    display: flex;
+    gap: 20px;
+}
+
+button:active {
+    background-color: #3e4245;
 }

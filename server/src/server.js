@@ -41,12 +41,18 @@ io.on("connection", (socket) => {
     socket.on("disconnect", () => {
         console.log(`User disconnected: ${socket.id}`);
         for (const roomCode in rooms) {
-            if (rooms[roomCode].users.get(socket.id)) {
+            console.log("checking room", roomCode);
+            
+            if (rooms[roomCode].users.has(socket.id)) {
                 rooms[roomCode].users.delete(socket.id);
-                if (rooms[roomCode].users.size === 0 && rooms[roomCode].game_state === GAME_FLOW[0]) {
-                    delete rooms[roomCode]; // Clean up empty rooms
-                } else {
-                    emitUpdate(roomCode, rooms[roomCode]);
+
+                if (rooms[roomCode].users.size === 0){
+                    delete rooms[roomCode];
+                } else if(rooms[roomCode].game_state === GAME_FLOW[0]) {
+                    emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size});
+                } else if(rooms[roomCode].game_state === GAME_FLOW[1]) {
+                    rooms[roomCode].game_state = GAME_FLOW[0];
+                    emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size});
                 }
                 break;
             }
@@ -65,15 +71,16 @@ io.on("connection", (socket) => {
             winner: null,
         };
         rooms[roomCode].users.set(socket.id,null);
-        emitUpdate({roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size}); 
+        emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size}); 
     });
 
     // Handle joining a room
     socket.on("join_room", (roomCode) => {
+        if(!rooms[roomCode]) return;
         if (rooms[roomCode].game_state === GAME_FLOW[0]) {
             socket.join(roomCode);
-            rooms[roomCode].users.add(socket.id,null);
-            emitUpdate({roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size});
+            rooms[roomCode].users.set(socket.id,null);
+            emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size});
         }
     });
 
@@ -81,7 +88,7 @@ io.on("connection", (socket) => {
     socket.on("start", (roomCode) => {
         if (rooms[roomCode] && rooms[roomCode].users.size > 1) {
             rooms[roomCode].game_state = GAME_FLOW[1];
-            emitUpdate({roomCode, game_state: GAME_FLOW[1]});
+            emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[1]});
         }
     });
 
@@ -90,13 +97,11 @@ io.on("connection", (socket) => {
         const { roomCode, option } = data;
         if (!rooms[roomCode]) return;
 
-        if (rooms[roomCode].users.get(socket.id) == null){
-            rooms[roomCode].user.set(socket.id, option);
-        }
+        rooms[roomCode].users.set(socket.id, option);
 
         if([...rooms[roomCode].users.values()].every(value => value !== null)){
             rooms[roomCode].game_state = GAME_FLOW[2];
-            emitUpdate({roomCode, game_state: GAME_FLOW[2]});
+            emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[2]});
         }
         
     });
@@ -106,7 +111,7 @@ io.on("connection", (socket) => {
         if (!rooms[roomCode] || rooms[roomCode].game_state !== GAME_FLOW[2]) return;
 
         rooms[roomCode].game_state = GAME_FLOW[3];
-        gameInstances[roomCode] = new Game(rooms[roomCode].playerOne.choice, rooms[roomCode].playerTwo.choice);
+        gameInstances[roomCode] = new Game([...rooms[roomCode].users.values()]);
         rooms[roomCode].game_objects = gameInstances[roomCode].getObjects();
         emitGameFrame(roomCode, rooms[roomCode].game_objects);
 
@@ -134,18 +139,22 @@ io.on("connection", (socket) => {
         if (rooms[roomCode].game_state !== GAME_FLOW[3]) return;
 
         // Determine which player is boosting based on socket ID
-        const player = rooms[roomCode].playerOne.id === socket.id ? 
-            rooms[roomCode].playerOne : 
-            rooms[roomCode].playerTwo;
+        const typeBoosted = rooms[roomCode].users.get(socket.id) 
     
         // Apply boost to the player's choice type
-        gameInstances[roomCode].boost(player.choice);
-        console.log(`Boost applied to ${player.choice}`);
-        
-        
-        // Send updated game objects
-        rooms[roomCode].game_objects = gameInstances[roomCode].getObjects();
-        emitGameFrame(roomCode, rooms[roomCode].game_objects);
+        gameInstances[roomCode].boost(typeBoosted);
+        console.log(`Boost applied to ${typeBoosted}`);
+    });
+
+    socket.on("leave_room", (roomCode) => {
+        socket.leave(roomCode);
+        rooms[roomCode].users.delete(socket.id);
+        if (rooms[roomCode].game_state === GAME_FLOW[0]) {
+            emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size});
+        }
+        if(rooms[roomCode].users.size === 0) {
+            delete rooms[roomCode];
+        }
     });
 });
 

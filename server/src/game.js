@@ -1,27 +1,20 @@
 export default class Game {
-    constructor(playerOneChoice, playerTwoChoice) {
+    constructor(players) {
         this.EMOJIS = { rock: "🧱", paper: "📄", scissor: "✂️" };
         this.CANVAS = { width: 800, height: 600};
         this.STEP = 2; // Movimiento en pasos de 2 píxeles
         this.MIN_DISTANCE_FOR_COLLISION = 30;
 
-        if (!this.EMOJIS[playerOneChoice] || !this.EMOJIS[playerTwoChoice]) {
-            throw new Error("Invalid player choice. Choices must be 'rock', 'paper', or 'scissor'.");
-        }
+        this.objects = [];
 
-        this.objects = [
-            this.createObject(playerOneChoice),
-            this.createObject(playerOneChoice),
-            this.createObject(playerOneChoice),
-            this.createObject(playerOneChoice),
-            this.createObject(playerOneChoice),
-
-            this.createObject(playerTwoChoice),
-            this.createObject(playerTwoChoice),
-            this.createObject(playerTwoChoice),
-            this.createObject(playerTwoChoice),
-            this.createObject(playerTwoChoice),
-        ];
+        // Crear objetos para cada jugador
+        players.forEach(player => {
+            this.objects.push(this.createObject(player));
+            this.objects.push(this.createObject(player));
+            this.objects.push(this.createObject(player));
+            this.objects.push(this.createObject(player));
+            this.objects.push(this.createObject(player));
+        });
     }
 
     createObject(type) {
@@ -131,10 +124,11 @@ export default class Game {
     }
 
     boost(type){
-        const objs = this.objects.filter(obj => obj.type === type);
-        objs.forEach(obj => {
-            obj.vx *= 0.1;
-            obj.vy *= 0.1;
+        this.objects.forEach(obj => {
+            if (obj.type === this.EMOJIS[type]) { 
+                obj.vx *= 2;
+                obj.vy *= 2;
+            }
         });
     }
 }
