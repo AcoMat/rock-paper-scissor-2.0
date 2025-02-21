@@ -41,7 +41,6 @@ io.on("connection", (socket) => {
     socket.on("disconnect", () => {
         console.log(`User disconnected: ${socket.id}`);
         for (const roomCode in rooms) {
-            console.log("checking room", roomCode);
             
             if (rooms[roomCode].users.has(socket.id)) {
                 rooms[roomCode].users.delete(socket.id);
@@ -71,6 +70,7 @@ io.on("connection", (socket) => {
             winner: null,
         };
         rooms[roomCode].users.set(socket.id,null);
+        console.log("Created Room ", roomCode);
         emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size}); 
     });
 
@@ -82,6 +82,7 @@ io.on("connection", (socket) => {
             rooms[roomCode].users.set(socket.id,null);
             emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size});
         }
+        console.log(`User ${socket.id} joined room ${roomCode}`);
     });
 
     // Handle starting the game (transition to choosing phase)
@@ -134,19 +135,13 @@ io.on("connection", (socket) => {
 
     // Handle boost
     socket.on("boost", (roomCode) => {
-        console.log(`Boost requested in room ${roomCode}`);
-        
         if (rooms[roomCode].game_state !== GAME_FLOW[3]) return;
-
-        // Determine which player is boosting based on socket ID
         const typeBoosted = rooms[roomCode].users.get(socket.id) 
-    
-        // Apply boost to the player's choice type
         gameInstances[roomCode].boost(typeBoosted);
-        console.log(`Boost applied to ${typeBoosted}`);
     });
 
     socket.on("leave_room", (roomCode) => {
+        console.log(`User ${socket.id} left room ${roomCode}`);
         socket.leave(roomCode);
         rooms[roomCode].users.delete(socket.id);
         if (rooms[roomCode].game_state === GAME_FLOW[0]) {
@@ -154,6 +149,7 @@ io.on("connection", (socket) => {
         }
         if(rooms[roomCode].users.size === 0) {
             delete rooms[roomCode];
+            console.log("Deleted Room ", roomCode);
         }
     });
 });

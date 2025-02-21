@@ -34,7 +34,7 @@ function App() {
   const handleStart = () => socket.emit("start", actualRoomData.roomCode);
   const handleChoose = (option) => { socket.emit("choose", { roomCode: actualRoomData.roomCode, option }) };
   const handleBoost = () => socket.emit("boost", actualRoomData.roomCode);
-  const restart = () => { setActualRoomData(null); };
+  const leave = () => { socket.emit("leave_room", actualRoomData.roomCode); setActualRoomData(null) };
 
   const drawObjects = useCallback((objects) => {
     const canvas = canvasRef.current;
@@ -70,10 +70,13 @@ function App() {
               <button className="copy-button" onClick={() => navigator.clipboard.writeText(actualRoomData.roomCode)}><svg  xmlns="http://www.w3.org/2000/svg"  width="24"  height="24"  viewBox="0 0 24 24"  fill="none"  stroke="currentColor"  strokeWidth="2"  strokeLinecap="round"  strokeLinejoin="round"  className="icon icon-tabler icons-tabler-outline icon-tabler-copy"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 7m0 2.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667z" /><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1" /></svg></button>
             </div>
             <div className="room-info">
-              <h2>Cant Jugadores: </h2>
+              <h2>Cant Jugadores:</h2>
               <h2>{actualRoomData.users}</h2>
             </div>
-            <button onClick={handleStart}>Empezar</button>
+            <div className="room-info">
+              <button onClick={leave}>Volver</button>
+              <button onClick={handleStart}>Empezar</button>
+            </div>
           </div>
         ) : actualRoomData.game_state === "CHOOSING" ? (
           <div className="menu">
@@ -87,16 +90,16 @@ function App() {
             </div>
           </div>
         ) : actualRoomData.game_state === "READY" ? (
-          <div>
+          <div className="game">
             <h1>En Juego</h1>
             <canvas ref={canvasRef} width="800" height="600"></canvas>
-            <button onClick={handleBoost}>Boost</button>
+            <button onClick={handleBoost} className="turbo-button">Boost</button>
           </div>
         ) : actualRoomData.game_state === "GAME_OVER" ? (
           <div className="menu">
             <h1>Fin del Juego</h1>
             <h1>Ganador: {actualRoomData.winner}</h1>
-            <button onClick={restart}>Volver a jugar</button>
+            <button onClick={leave}>Volver a jugar</button>
           </div>
         ) : null
       }
