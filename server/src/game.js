@@ -1,8 +1,8 @@
 export default class Game {
     constructor(playerOneChoice, playerTwoChoice) {
         this.EMOJIS = { rock: "🧱", paper: "📄", scissor: "✂️" };
-        this.CANVAS = { width: 800, height: 600 };
-        this.STEP = 5; // Movimiento en pasos de 2 píxeles
+        this.CANVAS = { width: 800, height: 600};
+        this.STEP = 2; // Movimiento en pasos de 2 píxeles
         this.MIN_DISTANCE_FOR_COLLISION = 30;
 
         if (!this.EMOJIS[playerOneChoice] || !this.EMOJIS[playerTwoChoice]) {
@@ -54,8 +54,22 @@ export default class Game {
 
     moveObjects() {
         this.objects.forEach(obj => {
-            // Pequeña probabilidad de cambiar de dirección (hace que el movimiento sea errático)
-            if (Math.random() < 0.2) { // 20% de probabilidad de cambiar
+            // Mover el objeto
+            obj.x += obj.vx;
+            obj.y += obj.vy;
+    
+            // Verificar colisiones con los bordes del canvas y hacer que reboten
+            if (obj.x <= 0 || obj.x + 30 >= this.CANVAS.width) {
+                obj.vx *= -1; // Invertir dirección en X
+                obj.x = Math.max(0, Math.min(obj.x, this.CANVAS.width - 30)); // Ajustar dentro del límite
+            }
+            if (obj.y <= 0 || obj.y + 30 >= this.CANVAS.height) {
+                obj.vy *= -1; // Invertir dirección en Y
+                obj.y = Math.max(0, Math.min(obj.y, this.CANVAS.height - 30)); // Ajustar dentro del límite
+            }
+    
+            // 20% de probabilidad de cambiar de dirección aleatoriamente
+            if (Math.random() < 0.2) {
                 const directions = [
                     { vx: this.STEP, vy: 0 },
                     { vx: -this.STEP, vy: 0 },
@@ -70,19 +84,12 @@ export default class Game {
                 obj.vx = newDirection.vx;
                 obj.vy = newDirection.vy;
             }
-
-            // Aplicar movimiento
-            obj.x += obj.vx;
-            obj.y += obj.vy;
-
-            // Rebote en los bordes
-            if (obj.x < 0 || obj.x > this.CANVAS.width) obj.vx *= -1;
-            if (obj.y < 0 || obj.y > this.CANVAS.height) obj.vy *= -1;
         });
     }
+    
 
     checkCollisions() {
-        const survivors = [];
+        const newObjs = [];
 
         for (let i = 0; i < this.objects.length; i++) {
             let obj1 = this.objects[i];
@@ -97,17 +104,13 @@ export default class Game {
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
                 if (distance < this.MIN_DISTANCE_FOR_COLLISION && this.isEnemy(obj1, obj2)) {
-                    isEliminated = true;
-                    break;
+                    obj1.type = obj2.type;
                 }
             }
-
-            if (!isEliminated) {
-                survivors.push(obj1);
-            }
+            newObjs.push(obj1);
         }
 
-        this.objects = survivors;
+        this.objects = newObjs;
     }
 
     isEnemy(obj1, obj2) {

@@ -25,8 +25,8 @@ const gameInstances = {};
 const generateRoomCode = () => Math.random().toString(36).substring(7);
 
 // Helper function to emit updates to all clients in a room
-const emitUpdate = (roomCode, room) => {
-    io.to(roomCode).emit("update", room);
+const emitUpdate = (roomCode, data) => {
+    io.to(roomCode).emit("update", data);
 };
 
 // Helper function to emit game frames to all clients in a room
@@ -41,9 +41,9 @@ io.on("connection", (socket) => {
     socket.on("disconnect", () => {
         console.log(`User disconnected: ${socket.id}`);
         for (const roomCode in rooms) {
-            if (rooms[roomCode].users.has(socket.id)) {
+            if (rooms[roomCode].users.get(socket.id)) {
                 rooms[roomCode].users.delete(socket.id);
-                if (rooms[roomCode].users.size === 0) {
+                if (rooms[roomCode].users.size === 0 && rooms[roomCode].game_state === GAME_FLOW[0]) {
                     delete rooms[roomCode]; // Clean up empty rooms
                 } else {
                     emitUpdate(roomCode, rooms[roomCode]);
@@ -59,30 +59,29 @@ io.on("connection", (socket) => {
         socket.join(roomCode);
         rooms[roomCode] = {
             roomCode,
-            users: new Set([socket.id]),
+            users: new Map(),
             game_state: GAME_FLOW[0],
-            playerOne: null,
-            playerTwo: null,
             game_objects: null,
             winner: null,
         };
-        emitUpdate(roomCode, rooms[roomCode]);
+        rooms[roomCode].users.set(socket.id,null);
+        emitUpdate({roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size}); 
     });
 
     // Handle joining a room
     socket.on("join_room", (roomCode) => {
-        if (rooms[roomCode] && rooms[roomCode].users.size < 2 && rooms[roomCode].game_state === GAME_FLOW[0]) {
+        if (rooms[roomCode].game_state === GAME_FLOW[0]) {
             socket.join(roomCode);
-            rooms[roomCode].users.add(socket.id);
-            emitUpdate(roomCode, rooms[roomCode]);
+            rooms[roomCode].users.add(socket.id,null);
+            emitUpdate({roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size});
         }
     });
 
     // Handle starting the game (transition to choosing phase)
     socket.on("start", (roomCode) => {
-        if (rooms[roomCode] && rooms[roomCode].users.size === 2) {
+        if (rooms[roomCode] && rooms[roomCode].users.size > 1) {
             rooms[roomCode].game_state = GAME_FLOW[1];
-            emitUpdate(roomCode, rooms[roomCode]);
+            emitUpdate({roomCode, game_state: GAME_FLOW[1]});
         }
     });
 
@@ -91,13 +90,15 @@ io.on("connection", (socket) => {
         const { roomCode, option } = data;
         if (!rooms[roomCode]) return;
 
-        if (!rooms[roomCode].playerOne || rooms[roomCode].playerOne.id === socket.id) {
-            rooms[roomCode].playerOne = { id: socket.id, choice: option };
-        } else {
-            rooms[roomCode].playerTwo = { id: socket.id, choice: option };
-            rooms[roomCode].game_state = GAME_FLOW[2];
-            emitUpdate(roomCode, rooms[roomCode]);
+        if (rooms[roomCode].users.get(socket.id) == null){
+            rooms[roomCode].user.set(socket.id, option);
         }
+
+        if([...rooms[roomCode].users.values()].every(value => value !== null)){
+            rooms[roomCode].game_state = GAME_FLOW[2];
+            emitUpdate({roomCode, game_state: GAME_FLOW[2]});
+        }
+        
     });
 
     // Handle starting the game (transition to running phase)
