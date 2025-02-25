@@ -2,6 +2,7 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import Game from "./game.js";
+import { generateGameLogic } from "./ai.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -13,7 +14,7 @@ const io = new Server(httpServer, {
 
 // Constants
 const GAME_FLOW = ["LOBBY", "CHOOSING", "READY", "RUNNING", "GAME_OVER"];
-const GAME_LOOP_INTERVAL = 5; // milliseconds
+const GAME_LOOP_INTERVAL = 20; // milliseconds
 const PORT = 3000;
 
 // Room management
@@ -41,17 +42,18 @@ io.on("connection", (socket) => {
     socket.on("disconnect", () => {
         console.log(`User disconnected: ${socket.id}`);
         for (const roomCode in rooms) {
-            
+
             if (rooms[roomCode].users.has(socket.id)) {
                 rooms[roomCode].users.delete(socket.id);
 
-                if (rooms[roomCode].users.size === 0){
+                if (rooms[roomCode].users.size === 0) {
                     delete rooms[roomCode];
-                } else if(rooms[roomCode].game_state === GAME_FLOW[0]) {
-                    emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size});
-                } else if(rooms[roomCode].game_state === GAME_FLOW[1]) {
+                    delete gameInstances[roomCode];
+                } else if (rooms[roomCode].game_state === GAME_FLOW[0]) {
+                    emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
+                } else if (rooms[roomCode].game_state === GAME_FLOW[1]) {
                     rooms[roomCode].game_state = GAME_FLOW[0];
-                    emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size});
+                    emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
                 }
                 break;
             }
@@ -68,19 +70,20 @@ io.on("connection", (socket) => {
             game_state: GAME_FLOW[0],
             game_objects: null,
             winner: null,
+            hasCustomObjects: false
         };
-        rooms[roomCode].users.set(socket.id,null);
+        rooms[roomCode].users.set(socket.id, null);
         console.log("Created Room ", roomCode);
-        emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size}); 
+        emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
     });
 
     // Handle joining a room
     socket.on("join_room", (roomCode) => {
-        if(!rooms[roomCode]) return;
+        if (!rooms[roomCode]) return;
         if (rooms[roomCode].game_state === GAME_FLOW[0]) {
             socket.join(roomCode);
-            rooms[roomCode].users.set(socket.id,null);
-            emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size});
+            rooms[roomCode].users.set(socket.id, null);
+            emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
         }
         console.log(`User ${socket.id} joined room ${roomCode}`);
     });
@@ -89,7 +92,7 @@ io.on("connection", (socket) => {
     socket.on("start", (roomCode) => {
         if (rooms[roomCode] && rooms[roomCode].users.size > 1) {
             rooms[roomCode].game_state = GAME_FLOW[1];
-            emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[1]});
+            emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[1] });
         }
     });
 
@@ -97,26 +100,62 @@ io.on("connection", (socket) => {
     socket.on("choose", (data) => {
         const { roomCode, option } = data;
         if (!rooms[roomCode]) return;
-
         rooms[roomCode].users.set(socket.id, option);
 
-        if([...rooms[roomCode].users.values()].every(value => value !== null)){
-            rooms[roomCode].game_state = GAME_FLOW[2];
-            emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[2]});
+        if (data.custom) {
+            rooms[roomCode].hasCustomObjects = true;
         }
-        
+
+        if ([...rooms[roomCode].users.values()].every(value => value !== null)) {
+            rooms[roomCode].game_state = GAME_FLOW[2];
+            emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[2] });
+        }
     });
 
-    // Handle starting the game (transition to running phase)
-    socket.on("start_game", (roomCode) => {
+
+    socket.on("start_game", async (roomCode) => {
         if (!rooms[roomCode] || rooms[roomCode].game_state !== GAME_FLOW[2]) return;
 
-        rooms[roomCode].game_state = GAME_FLOW[3];
-        gameInstances[roomCode] = new Game([...rooms[roomCode].users.values()]);
+        let customLogic;
+
+        if (rooms[roomCode].hasCustomObjects) {
+            const response = await generateGameLogic([...rooms[roomCode].users.values()]);
+            customLogic = response.result;
+        } else {
+            customLogic = [
+                {
+                    "object": "rock",
+                    "emoji": "🪨",
+                    "loses_against": ["paper"]
+                },
+                {
+                    "object": "paper",
+                    "emoji": "📄",
+                    "loses_against": ["scissor"]
+                },
+                {
+                    "object": "scissor",
+                    "emoji": "✂️",
+                    "loses_against": ["rock"]
+                }
+            ]
+        }
+
+        gameInstances[roomCode] = new Game([...rooms[roomCode].users.values()], customLogic);
+
         rooms[roomCode].game_objects = gameInstances[roomCode].getObjects();
+        rooms[roomCode].game_state = GAME_FLOW[3];
+
+
+        emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[3] });
         emitGameFrame(roomCode, rooms[roomCode].game_objects);
 
         const gameLoop = setInterval(() => {
+            if (!gameInstances[roomCode]) {
+                clearInterval(gameLoop);
+                return;
+            }
+
             gameInstances[roomCode].moveObjects();
             gameInstances[roomCode].checkCollisions();
             rooms[roomCode].game_objects = gameInstances[roomCode].getObjects();
@@ -136,23 +175,25 @@ io.on("connection", (socket) => {
     // Handle boost
     socket.on("boost", (roomCode) => {
         if (rooms[roomCode].game_state !== GAME_FLOW[3]) return;
-        const typeBoosted = rooms[roomCode].users.get(socket.id) 
+        const typeBoosted = rooms[roomCode].users.get(socket.id)
         gameInstances[roomCode].boost(typeBoosted);
     });
 
     socket.on("leave_room", (roomCode) => {
         console.log(`User ${socket.id} left room ${roomCode}`);
         socket.leave(roomCode);
+        if(!rooms[roomCode]) return;
         rooms[roomCode].users.delete(socket.id);
         if (rooms[roomCode].game_state === GAME_FLOW[0]) {
-            emitUpdate(roomCode, {roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size});
+            emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
         }
-        if(rooms[roomCode].users.size === 0) {
+        if (rooms[roomCode].users.size === 0) {
             delete rooms[roomCode];
             console.log("Deleted Room ", roomCode);
         }
     });
-});
+}
+);
 
 httpServer.listen(PORT, () => {
     console.log(`Server started, listening on port ${PORT}`);
