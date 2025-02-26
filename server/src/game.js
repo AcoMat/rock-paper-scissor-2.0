@@ -5,6 +5,7 @@ export default class Game {
         this.STEP = 2; // Movimiento en pasos de 2 píxeles
         this.MIN_DISTANCE_FOR_COLLISION = 30;
         this.BOOST_MULT = 2;
+        this.EMOJI_SIZE = 30;
 
         this.objects = [];
 
@@ -57,14 +58,22 @@ export default class Game {
             obj.x += obj.vx;
             obj.y += obj.vy;
 
-            // Verificar colisiones con los bordes del canvas y hacer que reboten
-            if (obj.x <= 0 || obj.x + 30 >= this.CANVAS.width) {
-                obj.vx *= -1; // Invertir dirección en X
-                obj.x = Math.max(0, Math.min(obj.x, this.CANVAS.width - 30)); // Ajustar dentro del límite
+            const halfSize = this.EMOJI_SIZE / 2;
+
+            if (obj.x - halfSize <= 0) {
+                obj.vx *= -1;
+                obj.x = halfSize;
+            } else if (obj.x + halfSize >= this.CANVAS.width) {
+                obj.vx *= -1;
+                obj.x = this.CANVAS.width - halfSize;
             }
-            if (obj.y <= 0 || obj.y + 30 >= this.CANVAS.height) {
-                obj.vy *= -1; // Invertir dirección en Y
-                obj.y = Math.max(0, Math.min(obj.y, this.CANVAS.height - 30)); // Ajustar dentro del límite
+    
+            if (obj.y - halfSize <= 0) {
+                obj.vy *= -1;
+                obj.y = halfSize;
+            } else if (obj.y + halfSize >= this.CANVAS.height) {
+                obj.vy *= -1;
+                obj.y = this.CANVAS.height - halfSize;
             }
 
             // 20% de probabilidad de cambiar de dirección aleatoriamente
