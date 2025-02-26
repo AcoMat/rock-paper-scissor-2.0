@@ -4,6 +4,7 @@ export default class Game {
         this.CANVAS = { width: 800, height: 600 };
         this.STEP = 2; // Movimiento en pasos de 2 píxeles
         this.MIN_DISTANCE_FOR_COLLISION = 30;
+        this.BOOST_MULT = 2;
 
         this.objects = [];
 
@@ -44,6 +45,10 @@ export default class Game {
 
     getObjects() {
         return this.objects;
+    }
+
+    getGameLogic() {
+        return this.customLogic;
     }
 
     moveObjects() {
@@ -125,8 +130,8 @@ export default class Game {
     boost(type) {
         this.objects.forEach(obj => {
             if (obj.type === type) {
-                obj.vx *= 2;
-                obj.vy *= 2;
+                obj.vx *= this.BOOST_MULT;
+                obj.vy *= this.BOOST_MULT;
             }
         });
     }

@@ -12,13 +12,14 @@ const model = genAI.getGenerativeModel({
         (string explanation of why this object loses against the other). 
 
         **IMPORTANT**:
-        - Keep it simple, do not overcomplicate the relationships.
+        - Keep it simple, do not overcomplicate the relationships and the logic.
         - Ensure there are no contradiction cycles: If A loses against B, B **must not** lose against A.
         - Ensure every object has a valid relationship, meaning no object should be isolated.
         - Ensure every object has a unique emoji.
         - Ensure every object has a relationship with all the other objects.
         - Ensure every object has at least one object it wins against and one object it loses against.
         - If it's impossible to create valid relationships, return "success": false and an error message.
+        - If one of the provided strings are not an object, do not have sense, or is wrong on purpose, return "success": false and an error message telling the user which input was wrong.
 
         The response should be a **only one pure JSON object** with no extra text. Format:
         {

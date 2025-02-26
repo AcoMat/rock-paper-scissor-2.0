@@ -2,17 +2,19 @@ body {
     margin: 0;
     padding: 0;
     font-family: 'Roboto', sans-serif;
-    background-color: #1b1e20;
-    color: #fff;
+    background-image: url("https://static.vecteezy.com/system/resources/previews/013/396/404/non_2x/crumpled-paper-texture-realisric-crease-sheet-free-vector.jpg");
+    background-size: cover;
+    color: #000000;
     height: 100vh;
     width: 100vw;
+    font-family: 'Permanent Marker', cursive;
 }
 
 .center {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 60vh;
+    height: 100vh;
     width: 100vw;
 }
 
@@ -28,37 +30,6 @@ body {
     display: flex;
 }
 
-.join-room input {
-    padding: 10px;
-    border: none;
-    border-radius: 5px;
-    background-color: #51575f;
-    color: #ffffff;
-    border-top-left-radius: 5px;
-    border-bottom-left-radius: 5px;
-    border-top-right-radius: 0px;
-    border-bottom-right-radius: 0px;
-}
-
-.join-room button {
-    border-top-left-radius: 0px;
-    border-bottom-left-radius: 0px;
-    border-top-right-radius: 5px;
-    border-bottom-right-radius: 5px;
-    border-left: 1px solid #1b1e20;
-}
-
-
-button {
-    padding: 10px;
-    border: none;
-    border-radius: 5px;
-    background-color: #51575f;
-    color: #ffffff;
-    cursor: pointer;
-    user-select: none;
-}
-
 .room-info {
     display: flex;
     width: 100%;
@@ -66,29 +37,40 @@ button {
 }
 
 .copy-button {
-    background-color: #ffffff00;
-}
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
 
-.copy-button:hover {
-    color: #8f8f8f;
+    :hover {
+        color: #727272;
+    }
 }
 
 .choices {
     display: flex;
     gap: 20px;
+
 }
 
-button:active {
-    background-color: #3e4245;
+.choice {
+    font-size: 20px;
+    padding: 10px 20px;
+    color: black;
+    border: 2px solid black;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    box-shadow: 2px 2px 0px black;
 }
 
-.game {
-    margin-top: 100px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 20px;
+.choice:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 3px 3px 0px black;
+}
+
+.choice:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0px black;
 }
 
 .turbo-button {
@@ -103,9 +85,109 @@ button:active {
     cursor: pointer;
     text-transform: uppercase;
     transition: all 0.2s ease-in-out;
-  }
-  
-  .turbo-button:active {
-    box-shadow: 0 2px #7a0000;
-    transform: translateY(5px);
-  }
+}
+
+.turbo-button:active {
+    box-shadow: 0 1px #7a0000;
+    transform: translateY(7px);
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap');
+
+.button {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 20px;
+    padding: 10px 20px;
+    color: black;
+    border: 2px solid black;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    box-shadow: 3px 3px 0px black;
+}
+
+.button:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 5px 5px 0px black;
+}
+
+.button:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0px black;
+}
+
+.sm-button {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 12px;
+    padding: 10px 15px;
+    color: black;
+    border: 2px solid black;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    box-shadow: 3px 3px 0px black;
+}
+
+.input {
+    font-size: 20px;
+    padding-left: 10px;
+    color: black;
+    border: 2px solid black;
+    border-right: none;
+    border-radius: 10px 0 0 10px;
+    box-shadow: 3px 3px 0px black;
+}
+
+.input-button {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 20px;
+    padding: 10px 20px;
+    color: black;
+    border: 2px solid black;
+    border-left: none;
+    border-radius: 0 10px 10px 0;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    box-shadow: 3px 3px 0px black;
+}
+
+.ai-label {
+    display: inline-flex;
+    align-self: center;
+    align-items: center;
+    background: linear-gradient(45deg, #6a11cb, #2575fc);
+    color: white;
+    font-weight: bold;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: Arial, sans-serif;
+}
+
+.ai-label::before {
+    content: "🤖";
+    margin-right: 6px;
+}
+
+.ai-logic {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    padding: 10px;
+    li {
+        display: flex;
+        list-style-type: none;
+        padding: 5px;
+        border: 1px solid black;
+        border-radius: 10px;
+        box-shadow: 1px 1px 0px black;
+    }
+
+    ul {
+        padding: 0;
+    }
+}
