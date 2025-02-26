@@ -79,7 +79,7 @@ function App() {
         !actualRoomData || !actualRoomData.roomCode ? (
           <div className="menu">
             <img src={logo} width={500} />
-            <h1 className="title">Emojis Battle Royale</h1>
+            <h1 className="title">Piedra Papel o Tijeras 2.0</h1>
             <button className="button" onClick={handleCreateRoom}>Crear Sala</button>
             <div className="flex">
               <input className="input" type="text" placeholder="Código de Sala" ref={inputRoomCode} />

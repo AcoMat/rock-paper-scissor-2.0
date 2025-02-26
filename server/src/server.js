@@ -4,223 +4,369 @@ import { Server } from "socket.io";
 import Game from "./game.js";
 import { generateGameLogic } from "./ai.js";
 
-const app = express();
-const httpServer = createServer(app);
-const io = new Server(httpServer, {
-    cors: {
-        origin: "http://localhost:5173",
-    }
-});
-
 // Constants
-const GAME_FLOW = ["LOBBY", "CHOOSING", "READY", "RUNNING", "GAME_OVER"];
+const GAME_STATES = {
+  LOBBY: "LOBBY",
+  CHOOSING: "CHOOSING",
+  READY: "READY",
+  RUNNING: "RUNNING",
+  GAME_OVER: "GAME_OVER"
+};
 const GAME_LOOP_INTERVAL = 20; // milliseconds
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+const DEFAULT_GAME_LOGIC = [
+  {
+    "object": "rock",
+    "emoji": "🪨",
+    "loses_against": ["paper"]
+  },
+  {
+    "object": "paper",
+    "emoji": "📄",
+    "loses_against": ["scissor"]
+  },
+  {
+    "object": "scissor",
+    "emoji": "✂️",
+    "loses_against": ["rock"]
+  }
+];
 
-// Room management
-const rooms = {};
-
-const gameInstances = {};
-
-// Helper function to generate a random room code
-const generateRoomCode = () => Math.random().toString(36).substring(7);
-
-// Helper function to emit updates to all clients in a room
-const emitUpdate = (roomCode, data) => {
-    io.to(roomCode).emit("update", data);
-};
-
-// Helper function to emit game frames to all clients in a room
-const emitGameFrame = (roomCode, gameObjects) => {
-    io.to(roomCode).emit("game_frame", gameObjects);
-};
-
-async function startGame(roomCode, customLogic) {
-    if (!rooms[roomCode] || rooms[roomCode].game_state !== GAME_FLOW[2]) return;
-
-    gameInstances[roomCode] = new Game([...rooms[roomCode].users.values()], customLogic);
-
-    rooms[roomCode].game_objects = gameInstances[roomCode].getObjects();
-    rooms[roomCode].game_state = GAME_FLOW[3];
-
-    emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[3] });
-    emitGameFrame(roomCode, rooms[roomCode].game_objects);
-
-    const gameLoop = setInterval(() => {
-        if (!gameInstances[roomCode]) {
-            clearInterval(gameLoop);
-            return;
-        }
-
-        gameInstances[roomCode].moveObjects();
-        gameInstances[roomCode].checkCollisions();
-        rooms[roomCode].game_objects = gameInstances[roomCode].getObjects();
-        emitGameFrame(roomCode, rooms[roomCode].game_objects);
-
-        const winner = gameInstances[roomCode].checkWinner();
-        if (winner) {
-            clearInterval(gameLoop);
-            rooms[roomCode].game_state = GAME_FLOW[4];
-            rooms[roomCode].winner = winner;
-            emitUpdate(roomCode, rooms[roomCode]);
-        }
-    }, GAME_LOOP_INTERVAL);
-};
-
-
-io.on("connection", (socket) => {
+class GameServer {
+  constructor() {
+    this.app = express();
+    this.httpServer = createServer(this.app);
+    this.io = new Server(this.httpServer, {
+      cors: {
+        origin: process.env.CLIENT_URL || "http://localhost:5173",
+        methods: ["GET", "POST"]
+      }
+    });
+    
+    this.rooms = {};
+    this.gameInstances = {};
+    this.gameLoops = {}; // Store game loops to clean them up properly
+    
+    this.setupSocketHandlers();
+  }
+  
+  start() {
+    this.httpServer.listen(PORT, () => {
+      console.log(`Server started, listening on port ${PORT}`);
+    });
+  }
+  
+  setupSocketHandlers() {
+    this.io.on("connection", this.handleConnection.bind(this));
+  }
+  
+  handleConnection(socket) {
     console.log(`User connected: ${socket.id}`);
-
-    // Handle user disconnect
-    socket.on("disconnect", () => {
-        console.log(`User disconnected: ${socket.id}`);
-        for (const roomCode in rooms) {
-
-            if (rooms[roomCode].users.has(socket.id)) {
-                rooms[roomCode].users.delete(socket.id);
-
-                if (rooms[roomCode].users.size === 0) {
-                    delete rooms[roomCode];
-                    delete gameInstances[roomCode];
-                    console.log("Deleted Room ", roomCode);
-                } else if (rooms[roomCode].game_state === GAME_FLOW[0]) {
-                    emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
-                } else if (rooms[roomCode].game_state === GAME_FLOW[1]) {
-                    rooms[roomCode].game_state = GAME_FLOW[0];
-                    emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
-                }
-                break;
-            }
+    
+    // Set up event handlers
+    socket.on("disconnect", () => this.handleDisconnect(socket));
+    socket.on("create_room", () => this.handleCreateRoom(socket));
+    socket.on("join_room", (roomCode) => this.handleJoinRoom(socket, roomCode));
+    socket.on("start", (roomCode) => this.handleStartGame(socket, roomCode));
+    socket.on("choose", (data) => this.handlePlayerChoice(socket, data));
+    socket.on("cancel_selection", (roomCode) => this.handleCancelSelection(socket, roomCode));
+    socket.on("boost", (roomCode) => this.handleBoost(socket, roomCode));
+    socket.on("leave_room", (roomCode) => this.handleLeaveRoom(socket, roomCode));
+  }
+  
+  // Helper functions
+  generateRoomCode() {
+    return Math.random().toString(36).substring(7);
+  }
+  
+  emitUpdate(roomCode, data) {
+    this.io.to(roomCode).emit("update", data);
+  }
+  
+  emitGameFrame(roomCode, gameObjects) {
+    this.io.to(roomCode).emit("game_frame", gameObjects);
+  }
+  
+  isRoomValid(roomCode) {
+    return !!this.rooms[roomCode];
+  }
+  
+  cleanupRoom(roomCode) {
+    this.stopGameLoop(roomCode);
+    delete this.rooms[roomCode];
+    delete this.gameInstances[roomCode];
+    console.log(`Deleted Room ${roomCode}`);
+  }
+  
+  stopGameLoop(roomCode) {
+    if (this.gameLoops[roomCode]) {
+      clearInterval(this.gameLoops[roomCode]);
+      delete this.gameLoops[roomCode];
+    }
+  }
+  
+  // Event handlers
+  handleDisconnect(socket) {
+    console.log(`User disconnected: ${socket.id}`);
+    for (const roomCode in this.rooms) {
+      const room = this.rooms[roomCode];
+      
+      if (room.users.has(socket.id)) {
+        room.users.delete(socket.id);
+        
+        if (room.users.size === 0) {
+          this.cleanupRoom(roomCode);
+        } else if (room.game_state === GAME_STATES.LOBBY) {
+          this.emitUpdate(roomCode, { 
+            roomCode, 
+            game_state: GAME_STATES.LOBBY, 
+            users: room.users.size 
+          });
+        } else if (room.game_state === GAME_STATES.CHOOSING) {
+          room.game_state = GAME_STATES.LOBBY;
+          this.emitUpdate(roomCode, { 
+            roomCode, 
+            game_state: GAME_STATES.LOBBY, 
+            users: room.users.size 
+          });
         }
+        break;
+      }
+    }
+  }
+  
+  handleCreateRoom(socket) {
+    const roomCode = this.generateRoomCode();
+    socket.join(roomCode);
+    
+    this.rooms[roomCode] = {
+      roomCode,
+      users: new Map(),
+      game_state: GAME_STATES.LOBBY,
+      game_objects: null,
+      winner: null,
+      hasCustomObjects: false
+    };
+    
+    this.rooms[roomCode].users.set(socket.id, null);
+    console.log(`Created Room ${roomCode}`);
+    
+    this.emitUpdate(roomCode, { 
+      roomCode, 
+      game_state: GAME_STATES.LOBBY, 
+      users: this.rooms[roomCode].users.size 
     });
-
-    // Handle room creation
-    socket.on("create_room", () => {
-        const roomCode = generateRoomCode();
-        socket.join(roomCode);
-        rooms[roomCode] = {
-            roomCode,
-            users: new Map(),
-            game_state: GAME_FLOW[0],
-            game_objects: null,
-            winner: null,
-            hasCustomObjects: false
-        };
-        rooms[roomCode].users.set(socket.id, null);
-        console.log("Created Room ", roomCode);
-        emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
+  }
+  
+  handleJoinRoom(socket, roomCode) {
+    if (!this.isRoomValid(roomCode)) {
+      socket.emit("update", { error: "Room not found" });
+      return;
+    }
+    
+    const room = this.rooms[roomCode];
+    
+    if (room.game_state === GAME_STATES.LOBBY) {
+      socket.join(roomCode);
+      room.users.set(socket.id, null);
+      
+      this.emitUpdate(roomCode, { 
+        roomCode, 
+        game_state: GAME_STATES.LOBBY, 
+        users: room.users.size 
+      });
+      
+      console.log(`User ${socket.id} joined room ${roomCode}`);
+    } else {
+      socket.emit("update", { error: "Game already in progress" });
+    }
+  }
+  
+  handleStartGame(socket, roomCode) {
+    if (!this.isRoomValid(roomCode)) return;
+    
+    const room = this.rooms[roomCode];
+    
+    if (room.users.size > 1) {
+      room.game_state = GAME_STATES.CHOOSING;
+      this.emitUpdate(roomCode, { 
+        roomCode, 
+        game_state: GAME_STATES.CHOOSING 
+      });
+    } else {
+      socket.emit("update", { 
+        roomCode, 
+        game_state: GAME_STATES.LOBBY, 
+        users: this.rooms[roomCode].users.size,
+        error: "Not enough players to start the game"
+      });
+    }
+  }
+  
+  async handlePlayerChoice(socket, data) {
+    const { roomCode, option } = data;
+    
+    if (!this.isRoomValid(roomCode)) return;
+    
+    const room = this.rooms[roomCode];
+    room.users.set(socket.id, option);
+    
+    if (data.custom) {
+      room.hasCustomObjects = true;
+    }
+    
+    socket.emit("update", { 
+      roomCode, 
+      game_state: GAME_STATES.READY, 
+      option 
     });
-
-    // Handle joining a room
-    socket.on("join_room", (roomCode) => {
-        if (!rooms[roomCode]){
-            socket.emit("update", { error: "Room not found" });
+    
+    // Check if all players have made their choice
+    if ([...room.users.values()].every(value => value !== null)) {
+      let customLogic;
+      
+      if (room.hasCustomObjects) {
+        try {
+          const response = await generateGameLogic([...room.users.values()]);
+          
+          if (!response.success) {
+            console.error(response.error);
+            room.game_state = GAME_STATES.CHOOSING;
+            room.hasCustomObjects = false;
+            room.users.forEach((_, userId) => room.users.set(userId, null));
+            
+            this.emitUpdate(roomCode, { 
+              roomCode, 
+              game_state: GAME_STATES.CHOOSING, 
+              error: response.error 
+            });
             return;
+          }
+          
+          customLogic = response.result;
+          room.customLogic = customLogic;
+        } catch (error) {
+          console.error("Error generating game logic:", error);
+          room.game_state = GAME_STATES.CHOOSING;
+          room.hasCustomObjects = false;
+          room.users.forEach((_, userId) => room.users.set(userId, null));
+          
+          this.emitUpdate(roomCode, { 
+            roomCode, 
+            game_state: GAME_STATES.CHOOSING, 
+            error: "Failed to generate custom game logic" 
+          });
+          return;
         }
-        if (rooms[roomCode].game_state === GAME_FLOW[0]) {
-            socket.join(roomCode);
-            rooms[roomCode].users.set(socket.id, null);
-            emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
-        }
-        console.log(`User ${socket.id} joined room ${roomCode}`);
+      } else {
+        customLogic = DEFAULT_GAME_LOGIC;
+      }
+      
+      room.game_state = GAME_STATES.READY;
+      this.startGameLogic(roomCode, customLogic);
+    }
+  }
+  
+  handleCancelSelection(socket, roomCode) {
+    if (!this.isRoomValid(roomCode)) return;
+    
+    const room = this.rooms[roomCode];
+    room.users.set(socket.id, null);
+    room.game_state = GAME_STATES.CHOOSING;
+    
+    socket.emit("update", { 
+      roomCode, 
+      game_state: GAME_STATES.CHOOSING 
     });
-
-    // Handle starting the game (transition to choosing phase)
-    socket.on("start", (roomCode) => {
-        if (rooms[roomCode] && rooms[roomCode].users.size > 1) {
-            rooms[roomCode].game_state = GAME_FLOW[1];
-            emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[1] });
-        }
+  }
+  
+  handleBoost(socket, roomCode) {
+    if (!this.isRoomValid(roomCode) || 
+        this.rooms[roomCode].game_state !== GAME_STATES.RUNNING || 
+        !this.gameInstances[roomCode]) return;
+    
+    const typeBoosted = this.rooms[roomCode].users.get(socket.id);
+    this.gameInstances[roomCode].boost(typeBoosted);
+  }
+  
+  handleLeaveRoom(socket, roomCode) {
+    console.log(`User ${socket.id} left room ${roomCode}`);
+    socket.leave(roomCode);
+    
+    if (!this.isRoomValid(roomCode)) return;
+    
+    const room = this.rooms[roomCode];
+    room.users.delete(socket.id);
+    
+    if (room.users.size === 0) {
+      this.cleanupRoom(roomCode);
+      return;
+    }
+    
+    if (room.game_state === GAME_STATES.LOBBY) {
+      this.emitUpdate(roomCode, { 
+        roomCode, 
+        game_state: GAME_STATES.LOBBY, 
+        users: room.users.size 
+      });
+    }
+    
+    // Reset to lobby if we don't have enough players or game was in setup stages
+    if ((room.users.size === 1 && room.game_state === GAME_STATES.CHOOSING) || 
+        room.game_state === GAME_STATES.READY) {
+      room.game_state = GAME_STATES.LOBBY;
+      room.users.forEach((_, userId) => room.users.set(userId, null));
+      
+      this.emitUpdate(roomCode, { 
+        roomCode, 
+        game_state: GAME_STATES.LOBBY, 
+        users: room.users.size 
+      });
+    }
+  }
+  
+  startGameLogic(roomCode, customLogic) {
+    if (!this.isRoomValid(roomCode) || 
+        this.rooms[roomCode].game_state !== GAME_STATES.READY) return;
+    
+    const room = this.rooms[roomCode];
+    this.gameInstances[roomCode] = new Game([...room.users.values()], customLogic);
+    
+    room.game_objects = this.gameInstances[roomCode].getObjects();
+    room.game_state = GAME_STATES.RUNNING;
+    
+    this.emitUpdate(roomCode, { 
+      roomCode, 
+      game_state: GAME_STATES.RUNNING 
     });
-
-    // Handle player choice
-    socket.on("choose", async (data) => {
-        const { roomCode, option } = data;
-        if (!rooms[roomCode]) return;
-        rooms[roomCode].users.set(socket.id, option);
-
-        if (data.custom) {
-            rooms[roomCode].hasCustomObjects = true;
-        }
-
-        socket.emit("update", { roomCode, game_state: GAME_FLOW[2], option });
-
-        if ([...rooms[roomCode].users.values()].every(value => value !== null)) {
-            let customLogic;
-
-            if (rooms[roomCode].hasCustomObjects) {
-                const response = await generateGameLogic([...rooms[roomCode].users.values()]);
-                if(!response.success) {
-                    console.error(response.error);
-                    rooms[roomCode].game_state = GAME_FLOW[1];
-                    rooms[roomCode].hasCustomObjects = false;
-                    rooms[roomCode].users.forEach((_, userId) => rooms[roomCode].users.set(userId, null));
-                    emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[1], error: response.error });
-                    return;
-                }
-                customLogic = response.result;
-                rooms[roomCode].customLogic = customLogic;
-            } else {
-                customLogic = [
-                    {
-                        "object": "rock",
-                        "emoji": "🪨",
-                        "loses_against": ["paper"]
-                    },
-                    {
-                        "object": "paper",
-                        "emoji": "📄",
-                        "loses_against": ["scissor"]
-                    },
-                    {
-                        "object": "scissor",
-                        "emoji": "✂️",
-                        "loses_against": ["rock"]
-                    }
-                ]
-            }
-
-            rooms[roomCode].game_state = GAME_FLOW[2];
-            startGame(roomCode, customLogic);
-        }
-    });
-
-    socket.on("cancel_selection", (roomCode) => {
-        if(!rooms[roomCode]) return;
-        rooms[roomCode].users.set(socket.id, null);
-        rooms[roomCode].game_state = GAME_FLOW[1];
-        socket.emit("update", { roomCode, game_state: GAME_FLOW[1] });
-    });
-
-    // Handle boost
-    socket.on("boost", (roomCode) => {
-        if (rooms[roomCode].game_state !== GAME_FLOW[3]) return;
-        const typeBoosted = rooms[roomCode].users.get(socket.id)
-        gameInstances[roomCode].boost(typeBoosted);
-    });
-
-    socket.on("leave_room", (roomCode) => {
-        console.log(`User ${socket.id} left room ${roomCode}`);
-        socket.leave(roomCode);
-        if (!rooms[roomCode]) return;
-        rooms[roomCode].users.delete(socket.id);
-        if (rooms[roomCode].users.size === 0) {
-            delete rooms[roomCode];
-            delete gameInstances[roomCode];
-            console.log("Deleted Room ", roomCode);
-        }
-        if (rooms[roomCode].game_state === GAME_FLOW[0]) {
-            emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
-        }
-        if (rooms[roomCode].users.size === 1 && rooms[roomCode].game_state === GAME_FLOW[1] || rooms[roomCode].game_state === GAME_FLOW[2]) {
-            rooms[roomCode].game_state = GAME_FLOW[0];
-            rooms[roomCode].users.forEach((_, userId) => rooms[roomCode].users.set(userId, null));
-            emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
-        }
-    });
+    
+    this.emitGameFrame(roomCode, room.game_objects);
+    
+    // Store the game loop interval so we can clear it later
+    this.gameLoops[roomCode] = setInterval(() => {
+      if (!this.gameInstances[roomCode]) {
+        this.stopGameLoop(roomCode);
+        return;
+      }
+      
+      const gameInstance = this.gameInstances[roomCode];
+      gameInstance.moveObjects();
+      gameInstance.checkCollisions();
+      
+      room.game_objects = gameInstance.getObjects();
+      this.emitGameFrame(roomCode, room.game_objects);
+      
+      const winner = gameInstance.checkWinner();
+      if (winner) {
+        this.stopGameLoop(roomCode);
+        room.game_state = GAME_STATES.GAME_OVER;
+        room.winner = winner;
+        this.emitUpdate(roomCode, room);
+      }
+    }, GAME_LOOP_INTERVAL);
+  }
 }
-);
 
-httpServer.listen(PORT, () => {
-    console.log(`Server started, listening on port ${PORT}`);
-});
+// Create and start the server
+const gameServer = new GameServer();
+gameServer.start();
