@@ -82,6 +82,7 @@ io.on("connection", (socket) => {
                 if (rooms[roomCode].users.size === 0) {
                     delete rooms[roomCode];
                     delete gameInstances[roomCode];
+                    console.log("Deleted Room ", roomCode);
                 } else if (rooms[roomCode].game_state === GAME_FLOW[0]) {
                     emitUpdate(roomCode, { roomCode, game_state: GAME_FLOW[0], users: rooms[roomCode].users.size });
                 } else if (rooms[roomCode].game_state === GAME_FLOW[1]) {
