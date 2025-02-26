@@ -88,7 +88,7 @@ La IA garantiza que
 - Cada objeto tenga al menos una relación ganadora y una perdedora
 - Además se explica la lógica de cada relación
 
-##Imagenes
+## Imagenes
 
 ![menu](screen1.png)
 ![game](screen2.png)
